@@ -59,7 +59,8 @@ export default function ProductsPage() {
         product.name.toLowerCase().includes(keyword) ||
         product.barcode.toLowerCase().includes(keyword);
       const matchCategory =
-        categoryFilter === "all" || product.categoryId === Number(categoryFilter);
+        categoryFilter === "all" ||
+        product.categoryId === Number(categoryFilter);
 
       return matchSearch && matchCategory;
     });
@@ -74,32 +75,43 @@ export default function ProductsPage() {
   }, [currentPage, filteredProducts]);
 
   const lowStockCount = products.filter(
-    (product) => product.stock <= product.reorderLevel
+    (product) => product.stock <= product.reorderLevel,
   ).length;
   const totalInventoryValue = products.reduce(
     (sum, product) => sum + product.price * product.stock,
-    0
+    0,
   );
-  const totalUnitsSold = sales.flatMap((sale) => sale.items).reduce((sum, item) => {
-    return sum + item.quantity;
-  }, 0);
+  const totalUnitsSold = sales
+    .flatMap((sale) => sale.items)
+    .reduce((sum, item) => {
+      return sum + item.quantity;
+    }, 0);
 
-  async function handleSaveProduct(data: Omit<ProductRecord, "id"> & { id?: number }) {
+  async function handleSaveProduct(
+    data: Omit<ProductRecord, "id"> & { id?: number },
+  ) {
     try {
       await saveProduct({
-        id: data.id,
+        id: data.id!,
         name: data.name,
         price: data.price,
         stock: data.stock,
         barcode: data.barcode,
         categoryId: data.categoryId,
         reorderLevel:
-          products.find((product) => product.id === data.id)?.reorderLevel ?? 10,
+          products.find((product) => product.id === data.id)?.reorderLevel ??
+          10,
       });
-      toast.success(data.id ? "Product updated successfully." : "Product created successfully.");
+      toast.success(
+        data.id
+          ? "Product updated successfully."
+          : "Product created successfully.",
+      );
     } catch (saveError) {
       toast.error(
-        saveError instanceof Error ? saveError.message : "Unable to save product."
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to save product.",
       );
     }
   }
@@ -113,7 +125,7 @@ export default function ProductsPage() {
       toast.error(
         deleteError instanceof Error
           ? deleteError.message
-          : "Unable to delete product."
+          : "Unable to delete product.",
       );
     } finally {
       setDeletingId(null);
@@ -151,7 +163,9 @@ export default function ProductsPage() {
         </div>
         <div className="rounded-xl border bg-card p-4">
           <p className="text-sm text-muted-foreground">Inventory Value</p>
-          <p className="mt-2 text-2xl font-bold">MMK {totalInventoryValue.toLocaleString()}</p>
+          <p className="mt-2 text-2xl font-bold">
+            MMK {totalInventoryValue.toLocaleString()}
+          </p>
         </div>
         <div className="rounded-xl border bg-card p-4">
           <p className="text-sm text-muted-foreground">Low Stock Alerts</p>
@@ -210,8 +224,8 @@ export default function ProductsPage() {
         <TableBody>
           {paginatedProducts.map((product) => {
             const categoryName =
-              categories.find((category) => category.id === product.categoryId)?.name ??
-              "Unknown";
+              categories.find((category) => category.id === product.categoryId)
+                ?.name ?? "Unknown";
             const isLowStock = product.stock <= product.reorderLevel;
 
             return (
@@ -264,7 +278,10 @@ export default function ProductsPage() {
 
           {!paginatedProducts.length && (
             <TableRow>
-              <TableCell className="text-center text-muted-foreground" colSpan={7}>
+              <TableCell
+                className="text-center text-muted-foreground"
+                colSpan={7}
+              >
                 No products found.
               </TableCell>
             </TableRow>

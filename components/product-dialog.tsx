@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { productFormSchema } from "@/types/pos-form-schemas";
 import { BarcodeLabel } from "@/components/barcode-label";
+import { Spinner } from "@/components/ui/spinner";
 
 export type ProductRecord = {
   id: number;
@@ -35,11 +36,12 @@ export type ProductRecord = {
 };
 
 type ProductFormValues = z.infer<typeof productFormSchema>;
+type ProductFormInputValues = z.input<typeof productFormSchema>;
 
 type ProductDialogProps = {
   product?: ProductRecord;
   categories: Array<{ id: number; name: string }>;
-  onSave: (data: ProductFormValues & { id?: number }) => void;
+  onSave: (data: ProductFormValues & { id?: number }) => void | Promise<void>;
 };
 
 const defaultValues: ProductFormValues = {
@@ -60,10 +62,11 @@ function generateBarcode() {
 export function ProductDialog({ product, categories, onSave }: ProductDialogProps) {
   const [open, setOpen] = useState(false);
 
-  const form = useForm<ProductFormValues>({
+  const form = useForm<ProductFormInputValues, unknown, ProductFormValues>({
     resolver: zodResolver(productFormSchema),
     defaultValues,
   });
+  const isSubmitting = form.formState.isSubmitting;
   const barcodePreview = useWatch({ control: form.control, name: "barcode" });
 
   useEffect(() => {
@@ -83,8 +86,8 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
     form.reset({ ...defaultValues, barcode: generateBarcode() });
   }, [form, open, product]);
 
-  function onSubmit(data: ProductFormValues) {
-    onSave({ ...data, id: product?.id });
+  async function onSubmit(data: ProductFormValues) {
+    await onSave({ ...data, id: product?.id });
     setOpen(false);
   }
 
@@ -114,6 +117,7 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
                     id="product-name"
                     placeholder="Coca Cola"
                     aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
                   />
                   {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                 </Field>
@@ -131,6 +135,7 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
                     id="product-barcode"
                     readOnly
                     aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
                   />
                   {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                 </Field>
@@ -155,9 +160,10 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
                       id="product-price"
                       type="number"
                       min={0}
-                      value={field.value}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      value={Number(field.value ?? 0)}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
                       aria-invalid={fieldState.invalid}
+                      disabled={isSubmitting}
                     />
                     {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                   </Field>
@@ -174,9 +180,10 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
                       id="product-stock"
                       type="number"
                       min={0}
-                      value={field.value}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      value={Number(field.value ?? 0)}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
                       aria-invalid={fieldState.invalid}
+                      disabled={isSubmitting}
                     />
                     {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                   </Field>
@@ -193,6 +200,7 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
                   <Select
                     value={String(field.value || "")}
                     onValueChange={(value) => field.onChange(Number(value))}
+                    disabled={isSubmitting}
                   >
                     <SelectTrigger className="w-full" aria-invalid={fieldState.invalid}>
                       <SelectValue placeholder="Select category" />
@@ -210,8 +218,15 @@ export function ProductDialog({ product, categories, onSave }: ProductDialogProp
               )}
             />
 
-            <Button type="submit" disabled={!categories.length}>
-              Save Product
+            <Button type="submit" disabled={!categories.length || isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Product"
+              )}
             </Button>
 
             {!categories.length && (

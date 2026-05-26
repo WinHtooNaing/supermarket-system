@@ -9,8 +9,11 @@ import z from "zod";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { readSession, writeSession, type SessionUser } from "@/lib/auth-session";
-import { readUsers, updateUserById } from "@/lib/user-store";
+import { saveUser, usePosData } from "@/lib/pos-store";
+import { toast } from "sonner";
 
 const adminInfoSchema = z.object({
   userId: z
@@ -40,6 +43,7 @@ export default function SettingsPage() {
   const [session, setSession] = useState<SessionUser | null>(() => readSession());
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
+  const { users, isLoading } = usePosData();
 
   const form = useForm<AdminInfoValues>({
     resolver: zodResolver(adminInfoSchema),
@@ -50,8 +54,13 @@ export default function SettingsPage() {
       role: "admin",
     },
   });
+  const isSubmitting = form.formState.isSubmitting;
 
   useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
     if (!session) {
       router.replace("/auth");
       return;
@@ -62,7 +71,6 @@ export default function SettingsPage() {
       return;
     }
 
-    const users = readUsers();
     const admin = users.find((user) => user.userId === session.userId);
 
     if (!admin || admin.role !== "admin") {
@@ -76,35 +84,58 @@ export default function SettingsPage() {
       password: admin.password,
       role: "admin",
     });
-  }, [form, router, session]);
+  }, [form, isLoading, router, session, users]);
 
-  function onSubmit(data: AdminInfoValues) {
+  async function onSubmit(data: AdminInfoValues) {
     if (!session) return;
 
-    const users = readUsers();
     const duplicate = users.find(
       (user) => user.userId === data.userId && user.userId !== session.userId
     );
 
     if (duplicate) {
       setSaveMessage("");
-      setSaveError("This user ID is already used by another account.");
+      const message = "This user ID is already used by another account.";
+      setSaveError(message);
+      toast.error(message);
       return;
     }
 
-    updateUserById(session.userId, {
-      userId: data.userId,
-      name: data.name,
-      password: data.password,
-      role: "admin",
-    });
+    const currentAdmin = users.find((user) => user.userId === session.userId);
 
-    const nextSession = { userId: data.userId, name: data.name, role: "admin" as const };
-    writeSession(nextSession);
-    setSession(nextSession);
+    if (!currentAdmin) {
+      setSaveMessage("");
+      const message = "Admin account could not be found.";
+      setSaveError(message);
+      toast.error(message);
+      return;
+    }
 
-    setSaveError("");
-    setSaveMessage("Admin information updated successfully.");
+    try {
+      await saveUser({
+        id: currentAdmin.id,
+        userId: data.userId,
+        name: data.name,
+        password: data.password,
+        role: "admin",
+      });
+
+      const nextSession = { userId: data.userId, name: data.name, role: "admin" as const };
+      writeSession(nextSession);
+      setSession(nextSession);
+
+      setSaveError("");
+      setSaveMessage("Admin information updated successfully.");
+      toast.success("Admin information updated successfully.");
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to update admin information.";
+      setSaveMessage("");
+      setSaveError(message);
+      toast.error(message);
+    }
   }
 
   return (
@@ -114,74 +145,99 @@ export default function SettingsPage() {
         Update the admin account details used for login and profile.
       </p>
 
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <FieldGroup>
-          <Controller
-            name="userId"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="admin-user-id">User ID</FieldLabel>
-                <Input
-                  {...field}
-                  id="admin-user-id"
-                  aria-invalid={fieldState.invalid}
-                  onChange={(e) => field.onChange(e.target.value.replace(/\s/g, ""))}
-                />
-                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
+      {isLoading ? (
+        <div className="space-y-4 rounded-xl border bg-card p-6">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-36" />
+        </div>
+      ) : (
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <FieldGroup>
+            <Controller
+              name="userId"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="admin-user-id">User ID</FieldLabel>
+                  <Input
+                    {...field}
+                    id="admin-user-id"
+                    aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
+                    onChange={(e) => field.onChange(e.target.value.replace(/\s/g, ""))}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-          <Controller
-            name="name"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="admin-name">Name</FieldLabel>
-                <Input {...field} id="admin-name" aria-invalid={fieldState.invalid} />
-                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
+            <Controller
+              name="name"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="admin-name">Name</FieldLabel>
+                  <Input
+                    {...field}
+                    id="admin-name"
+                    aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-          <Controller
-            name="password"
-            control={form.control}
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="admin-password">Password</FieldLabel>
-                <Input
-                  {...field}
-                  id="admin-password"
-                  type="password"
-                  aria-invalid={fieldState.invalid}
-                  autoComplete="off"
-                />
-                {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
+            <Controller
+              name="password"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="admin-password">Password</FieldLabel>
+                  <Input
+                    {...field}
+                    id="admin-password"
+                    type="password"
+                    aria-invalid={fieldState.invalid}
+                    autoComplete="off"
+                    disabled={isSubmitting}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-          <Controller
-            name="role"
-            control={form.control}
-            render={({ field }) => (
-              <Field>
-                <FieldLabel htmlFor="admin-role">Role</FieldLabel>
-                <Input {...field} id="admin-role" readOnly />
-              </Field>
-            )}
-          />
+            <Controller
+              name="role"
+              control={form.control}
+              render={({ field }) => (
+                <Field>
+                  <FieldLabel htmlFor="admin-role">Role</FieldLabel>
+                  <Input {...field} id="admin-role" readOnly disabled />
+                </Field>
+              )}
+            />
 
-          {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-          {saveMessage && <p className="text-sm text-green-600">{saveMessage}</p>}
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+            {saveMessage && <p className="text-sm text-green-600">{saveMessage}</p>}
 
-          <Button type="submit" className="w-full sm:w-fit">
-            Save Admin Info
-          </Button>
-        </FieldGroup>
-      </form>
+            <Button type="submit" className="w-full sm:w-fit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Admin Info"
+              )}
+            </Button>
+          </FieldGroup>
+        </form>
+      )}
     </div>
   );
 }

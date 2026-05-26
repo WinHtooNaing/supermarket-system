@@ -25,6 +25,7 @@ import {
 import { saleFormSchema } from "@/types/pos-form-schemas";
 
 type SaleFormValues = z.infer<typeof saleFormSchema>;
+type SaleFormInputValues = z.input<typeof saleFormSchema>;
 
 export type SaleRecord = {
   id: number;
@@ -56,7 +57,7 @@ const defaultValues: SaleFormValues = {
 export function SaleDialog({ sellers, products, onSave }: SaleDialogProps) {
   const [open, setOpen] = useState(false);
 
-  const form = useForm<SaleFormValues>({
+  const form = useForm<SaleFormInputValues, unknown, SaleFormValues>({
     resolver: zodResolver(saleFormSchema),
     defaultValues,
   });
@@ -188,8 +189,8 @@ export function SaleDialog({ sellers, products, onSave }: SaleDialogProps) {
                         <Input
                           type="number"
                           min={1}
-                          value={quantityField.value}
-                          onChange={(e) => quantityField.onChange(e.target.value)}
+                          value={Number(quantityField.value ?? 0)}
+                          onChange={(e) => quantityField.onChange(Number(e.target.value))}
                           aria-invalid={fieldState.invalid}
                         />
                         {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
@@ -206,8 +207,8 @@ export function SaleDialog({ sellers, products, onSave }: SaleDialogProps) {
                         <Input
                           type="number"
                           min={0}
-                          value={priceField.value}
-                          onChange={(e) => priceField.onChange(e.target.value)}
+                          value={Number(priceField.value ?? 0)}
+                          onChange={(e) => priceField.onChange(Number(e.target.value))}
                           aria-invalid={fieldState.invalid}
                         />
                         {fieldState.invalid && <FieldError errors={[fieldState.error]} />}

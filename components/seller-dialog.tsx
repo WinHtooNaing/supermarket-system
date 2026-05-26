@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { roleOptions, sellerFormSchema } from "@/types/pos-form-schemas";
 
 export type SellerRecord = {
@@ -37,7 +38,7 @@ type SellerFormValues = z.infer<typeof sellerFormSchema>;
 
 type SellerDialogProps = {
   seller?: SellerRecord;
-  onSave: (data: SellerFormValues & { id?: number }) => void;
+  onSave: (data: SellerFormValues & { id?: number }) => void | Promise<void>;
 };
 
 export function SellerDialog({ seller, onSave }: SellerDialogProps) {
@@ -52,6 +53,7 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
       role: "seller",
     },
   });
+  const isSubmitting = form.formState.isSubmitting;
 
   useEffect(() => {
     if (!open) return;
@@ -64,8 +66,8 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
     });
   }, [form, open, seller]);
 
-  function onSubmit(data: SellerFormValues) {
-    onSave({ ...data, id: seller?.id });
+  async function onSubmit(data: SellerFormValues) {
+    await onSave({ ...data, id: seller?.id });
     setOpen(false);
   }
 
@@ -94,6 +96,7 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
                     id="seller-user-id"
                     placeholder="seller001"
                     aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
                     onChange={(e) => field.onChange(e.target.value.replace(/\s/g, ""))}
                   />
                   {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
@@ -113,6 +116,7 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
                     type="password"
                     aria-invalid={fieldState.invalid}
                     autoComplete="off"
+                    disabled={isSubmitting}
                   />
                   {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                 </Field>
@@ -130,6 +134,7 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
                     id="seller-name"
                     placeholder="Mg Mg"
                     aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
                   />
                   {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                 </Field>
@@ -142,7 +147,11 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel>Role</FieldLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={isSubmitting}
+                  >
                     <SelectTrigger className="w-full" aria-invalid={fieldState.invalid}>
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
@@ -159,7 +168,16 @@ export function SellerDialog({ seller, onSave }: SellerDialogProps) {
               )}
             />
 
-            <Button type="submit">Save Seller</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Seller"
+              )}
+            </Button>
           </FieldGroup>
         </form>
       </DialogContent>

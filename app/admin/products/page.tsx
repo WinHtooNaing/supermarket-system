@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 
 import { BarcodeLabel } from "@/components/barcode-label";
-import { ProductDialog, ProductRecord } from "@/components/product-dialog";
+import { PosPageSkeleton } from "@/components/pos-page-skeleton";
+import { ProductDialog, type ProductRecord } from "@/components/product-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,44 +23,41 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  deleteProduct,
+  saveProduct,
+  usePosData,
+  type PosProduct,
+} from "@/lib/pos-store";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
 
-const categorySeed = [
-  { id: 1, name: "Drink" },
-  { id: 2, name: "Food" },
-  { id: 3, name: "Snack" },
-];
-
-const productSeed: ProductRecord[] = [
-  {
-    id: 1,
-    name: "Coke 325ml",
-    price: 1500,
-    stock: 25,
-    barcode: "8801111111111",
-    categoryId: 1,
-  },
-  {
-    id: 2,
-    name: "White Bread",
-    price: 2200,
-    stock: 18,
-    barcode: "8802222222222",
-    categoryId: 2,
-  },
-];
+function toProductRecord(product: PosProduct): ProductRecord {
+  return {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    stock: product.stock,
+    barcode: product.barcode,
+    categoryId: product.categoryId,
+  };
+}
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<ProductRecord[]>(productSeed);
+  const { categories, products, sales, isLoading, error } = usePosData();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const pageSize = 5;
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const pageSize = 6;
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
+      const keyword = search.trim().toLowerCase();
       const matchSearch =
-        product.name.toLowerCase().includes(search.toLowerCase()) ||
-        product.barcode.toLowerCase().includes(search.toLowerCase());
+        !keyword ||
+        product.name.toLowerCase().includes(keyword) ||
+        product.barcode.toLowerCase().includes(keyword);
       const matchCategory =
         categoryFilter === "all" || product.categoryId === Number(categoryFilter);
 
@@ -72,36 +71,95 @@ export default function ProductsPage() {
   const paginatedProducts = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredProducts.slice(start, start + pageSize);
-  }, [filteredProducts, currentPage]);
+  }, [currentPage, filteredProducts]);
 
-  function handleSaveProduct(data: Omit<ProductRecord, "id"> & { id?: number }) {
-    if (data.id) {
-      setProducts((prev) =>
-        prev.map((product) =>
-          product.id === data.id ? { ...product, ...data } : product
-        )
+  const lowStockCount = products.filter(
+    (product) => product.stock <= product.reorderLevel
+  ).length;
+  const totalInventoryValue = products.reduce(
+    (sum, product) => sum + product.price * product.stock,
+    0
+  );
+  const totalUnitsSold = sales.flatMap((sale) => sale.items).reduce((sum, item) => {
+    return sum + item.quantity;
+  }, 0);
+
+  async function handleSaveProduct(data: Omit<ProductRecord, "id"> & { id?: number }) {
+    try {
+      await saveProduct({
+        id: data.id,
+        name: data.name,
+        price: data.price,
+        stock: data.stock,
+        barcode: data.barcode,
+        categoryId: data.categoryId,
+        reorderLevel:
+          products.find((product) => product.id === data.id)?.reorderLevel ?? 10,
+      });
+      toast.success(data.id ? "Product updated successfully." : "Product created successfully.");
+    } catch (saveError) {
+      toast.error(
+        saveError instanceof Error ? saveError.message : "Unable to save product."
       );
-      return;
     }
-
-    setProducts((prev) => [
-      ...prev,
-      {
-        ...data,
-        id: Date.now(),
-      },
-    ]);
   }
 
-  function handleDeleteProduct(id: number) {
-    setProducts((prev) => prev.filter((product) => product.id !== id));
+  async function handleDeleteProduct(id: number) {
+    try {
+      setDeletingId(id);
+      await deleteProduct(id);
+      toast.success("Product deleted successfully.");
+    } catch (deleteError) {
+      toast.error(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete product."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  if (isLoading) {
+    return <PosPageSkeleton />;
   }
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Products</h1>
-        <ProductDialog categories={categorySeed} onSave={handleSaveProduct} />
+        <div>
+          <h1 className="text-xl font-bold">Products</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage inventory, barcodes, and current stock levels.
+          </p>
+        </div>
+        <ProductDialog
+          categories={categories.map((category) => ({
+            id: category.id,
+            name: category.name,
+          }))}
+          onSave={handleSaveProduct}
+        />
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Total Products</p>
+          <p className="mt-2 text-2xl font-bold">{products.length}</p>
+        </div>
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Inventory Value</p>
+          <p className="mt-2 text-2xl font-bold">MMK {totalInventoryValue.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Low Stock Alerts</p>
+          <p className="mt-2 text-2xl font-bold">{lowStockCount}</p>
+          <p className="text-xs text-muted-foreground">
+            {totalUnitsSold.toLocaleString()} units sold across saved bills
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -127,7 +185,7 @@ export default function ProductsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {categorySeed.map((category) => (
+            {categories.map((category) => (
               <SelectItem key={category.id} value={String(category.id)}>
                 {category.name}
               </SelectItem>
@@ -144,6 +202,7 @@ export default function ProductsPage() {
             <TableHead>Category</TableHead>
             <TableHead>Price</TableHead>
             <TableHead>Stock</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead className="w-[180px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -151,12 +210,13 @@ export default function ProductsPage() {
         <TableBody>
           {paginatedProducts.map((product) => {
             const categoryName =
-              categorySeed.find((category) => category.id === product.categoryId)?.name ||
+              categories.find((category) => category.id === product.categoryId)?.name ??
               "Unknown";
+            const isLowStock = product.stock <= product.reorderLevel;
 
             return (
               <TableRow key={product.id}>
-                <TableCell>{product.name}</TableCell>
+                <TableCell className="font-medium">{product.name}</TableCell>
                 <TableCell className="min-w-[220px]">
                   <BarcodeLabel
                     value={product.barcode}
@@ -166,20 +226,36 @@ export default function ProductsPage() {
                   />
                 </TableCell>
                 <TableCell>{categoryName}</TableCell>
-                <TableCell>{product.price}</TableCell>
+                <TableCell>MMK {product.price.toLocaleString()}</TableCell>
                 <TableCell>{product.stock}</TableCell>
+                <TableCell>
+                  <Badge variant={isLowStock ? "destructive" : "secondary"}>
+                    {isLowStock ? "Restock" : "Healthy"}
+                  </Badge>
+                </TableCell>
                 <TableCell className="space-x-2">
                   <ProductDialog
-                    product={product}
-                    categories={categorySeed}
+                    product={toProductRecord(product)}
+                    categories={categories.map((category) => ({
+                      id: category.id,
+                      name: category.name,
+                    }))}
                     onSave={handleSaveProduct}
                   />
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => handleDeleteProduct(product.id)}
+                    disabled={deletingId === product.id}
+                    onClick={() => void handleDeleteProduct(product.id)}
                   >
-                    Delete
+                    {deletingId === product.id ? (
+                      <>
+                        <Spinner className="mr-2" />
+                        Deleting...
+                      </>
+                    ) : (
+                      "Delete"
+                    )}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -188,7 +264,7 @@ export default function ProductsPage() {
 
           {!paginatedProducts.length && (
             <TableRow>
-              <TableCell className="text-center text-muted-foreground" colSpan={6}>
+              <TableCell className="text-center text-muted-foreground" colSpan={7}>
                 No products found.
               </TableCell>
             </TableRow>
@@ -220,4 +296,3 @@ export default function ProductsPage() {
     </div>
   );
 }
-

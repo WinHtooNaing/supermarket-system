@@ -38,9 +38,11 @@ const AppTopBar = () => {
     };
   }, []);
 
-  function handleLogout() {
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
     clearSession();
     router.push("/auth");
+    router.refresh();
   }
 
   return (

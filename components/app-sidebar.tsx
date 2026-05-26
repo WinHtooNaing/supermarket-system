@@ -1,19 +1,26 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LayoutDashboard, Package, Settings, Tags, Users } from "lucide-react";
+
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, Package, Tags, Users, Settings } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  readSession,
+  SESSION_UPDATED_EVENT,
+  type SessionUser,
+} from "@/lib/auth-session";
 
 const menuItems = [
   { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
@@ -25,17 +32,31 @@ const menuItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const [session, setSession] = useState<SessionUser | null>(null);
+
+  useEffect(() => {
+    function syncSession() {
+      setSession(readSession());
+    }
+
+    syncSession();
+    window.addEventListener(SESSION_UPDATED_EVENT, syncSession);
+    window.addEventListener("storage", syncSession);
+
+    return () => {
+      window.removeEventListener(SESSION_UPDATED_EVENT, syncSession);
+      window.removeEventListener("storage", syncSession);
+    };
+  }, []);
 
   return (
     <Sidebar className="border-r">
       <SidebarContent>
-        {/* 🔷 LOGO / TITLE */}
         <div className="px-4 py-4">
-          <h1 className="text-lg font-bold">🛒 Supermarket</h1>
+          <h1 className="text-lg font-bold">POS Supermarket</h1>
           <p className="text-xs text-muted-foreground">Admin Panel</p>
         </div>
 
-        {/* 🔹 MENU */}
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
 
@@ -51,7 +72,7 @@ export function AppSidebar() {
                     className="transition-all"
                   >
                     <Link href={item.url} className="flex items-center gap-3">
-                      <item.icon className="w-4 h-4" />
+                      <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -62,16 +83,19 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* 🔻 FOOTER (USER PROFILE) */}
       <SidebarFooter>
-        <div className="flex items-center gap-3 px-4 py-3 border-t">
+        <div className="flex items-center gap-3 border-t px-4 py-3">
           <Avatar>
-            <AvatarFallback>W</AvatarFallback>
+            <AvatarFallback>
+              {session?.name?.slice(0, 2).toUpperCase() || "AD"}
+            </AvatarFallback>
           </Avatar>
 
           <div className="text-sm">
-            <p className="font-medium">Win Htoo</p>
-            <p className="text-xs text-muted-foreground">Admin</p>
+            <p className="font-medium">{session?.name || "Admin User"}</p>
+            <p className="text-xs text-muted-foreground">
+              {session?.role === "admin" ? "Administrator" : "Signed In"}
+            </p>
           </div>
         </div>
       </SidebarFooter>

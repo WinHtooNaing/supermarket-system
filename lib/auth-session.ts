@@ -1,6 +1,6 @@
 import type { AppUserRole } from "@/lib/mock-users";
+import { SESSION_SNAPSHOT_COOKIE } from "@/lib/auth-constants";
 
-export const SESSION_KEY = "pos_session";
 export const SESSION_UPDATED_EVENT = "pos-session-updated";
 
 export type SessionUser = {
@@ -9,26 +9,49 @@ export type SessionUser = {
   role: AppUserRole;
 };
 
-export function readSession(): SessionUser | null {
-  if (typeof window === "undefined") return null;
-
+function decodeSnapshotCookie(value: string) {
   try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as SessionUser;
+    const normalizedValue = value.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedValue = normalizedValue.padEnd(
+      normalizedValue.length + ((4 - (normalizedValue.length % 4)) % 4),
+      "="
+    );
+
+    return JSON.parse(atob(paddedValue)) as SessionUser;
   } catch {
     return null;
   }
 }
 
+function readSessionCookie() {
+  if (typeof document === "undefined") return null;
+
+  const cookies = document.cookie.split("; ");
+  const rawCookie = cookies.find((cookie) => cookie.startsWith(`${SESSION_SNAPSHOT_COOKIE}=`));
+  const cookieValue = rawCookie?.split("=").slice(1).join("=");
+
+  if (!cookieValue) return null;
+  return decodeSnapshotCookie(cookieValue);
+}
+
+export function readSession(): SessionUser | null {
+  return readSessionCookie();
+}
+
 export function writeSession(user: SessionUser) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  if (typeof document === "undefined") return;
+
+  const value = btoa(JSON.stringify(user))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  document.cookie = `${SESSION_SNAPSHOT_COOKIE}=${value}; Path=/; SameSite=Lax`;
   window.dispatchEvent(new Event(SESSION_UPDATED_EVENT));
 }
 
 export function clearSession() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(SESSION_KEY);
+  if (typeof document === "undefined") return;
+  document.cookie = `${SESSION_SNAPSHOT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
   window.dispatchEvent(new Event(SESSION_UPDATED_EVENT));
 }

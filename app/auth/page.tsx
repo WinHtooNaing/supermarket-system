@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
+import z from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,15 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import loginSchema from "@/types/login-schema";
-import { Controller, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import z from "zod";
 import { Field, FieldGroup, FieldLabel, FieldError } from "@/components/ui/field";
-import { writeSession } from "@/lib/auth-session";
-import { readUsers } from "@/lib/user-store";
+import { loginAction } from "@/server/auth";
 
 const AuthPage = () => {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [authError, setAuthError] = useState("");
 
   const form = useForm<z.infer<typeof loginSchema>>({
@@ -31,26 +31,34 @@ const AuthPage = () => {
     },
   });
 
-  function onSubmit(data: z.infer<typeof loginSchema>) {
-    const users = readUsers();
-    const user = users.find(
-      (item) => item.userId === data.user_id && item.password === data.password
-    );
-
-    if (!user) {
-      setAuthError("Invalid user ID or password.");
-      return;
-    }
-
+  function onSubmit(values: z.infer<typeof loginSchema>) {
     setAuthError("");
-    writeSession({ userId: user.userId, name: user.name, role: user.role });
 
-    if (user.role === "seller") {
-      router.push("/sale");
-      return;
-    }
+    startTransition(async () => {
+      const result = await loginAction(values);
 
-    router.push("/admin/dashboard");
+      if (result.errors?.user_id) {
+        form.setError("user_id", {
+          message: result.errors.user_id[0],
+        });
+      }
+
+      if (result.errors?.password) {
+        form.setError("password", {
+          message: result.errors.password[0],
+        });
+      }
+
+      if (result.message) {
+        setAuthError(result.message);
+        return;
+      }
+
+      if (result.redirectTo) {
+        router.push(result.redirectTo);
+        router.refresh();
+      }
+    });
   }
 
   return (
@@ -71,40 +79,37 @@ const AuthPage = () => {
                 control={form.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="form-rhf-demo-user_id">User ID</FieldLabel>
+                    <FieldLabel htmlFor="login-user-id">User ID</FieldLabel>
                     <Input
                       {...field}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\s/g, "");
-                        field.onChange(value);
-                      }}
-                      id="form-rhf-demo-user_id"
-                      aria-invalid={fieldState.invalid}
+                      id="login-user-id"
                       placeholder="Enter your user ID"
                       autoComplete="off"
+                      aria-invalid={fieldState.invalid}
+                      disabled={isPending}
+                      onChange={(e) => field.onChange(e.target.value.replace(/\s/g, ""))}
                     />
-                    {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                    {fieldState.error && <FieldError errors={[fieldState.error]} />}
                   </Field>
                 )}
               />
+
               <Controller
                 name="password"
                 control={form.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="form-rhf-demo-password">Password</FieldLabel>
+                    <FieldLabel htmlFor="login-password">Password</FieldLabel>
                     <Input
                       {...field}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\s/g, "");
-                        field.onChange(value);
-                      }}
-                      id="form-rhf-demo-password"
+                      id="login-password"
                       type="password"
-                      aria-invalid={fieldState.invalid}
                       placeholder="Enter your password"
+                      aria-invalid={fieldState.invalid}
+                      disabled={isPending}
+                      onChange={(e) => field.onChange(e.target.value.replace(/\s/g, ""))}
                     />
-                    {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                    {fieldState.error && <FieldError errors={[fieldState.error]} />}
                   </Field>
                 )}
               />
@@ -113,8 +118,8 @@ const AuthPage = () => {
             {authError && <p className="mt-3 text-sm text-destructive">{authError}</p>}
 
             <div className="mt-4">
-              <Button type="submit" className="w-full">
-                Login
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? "Logging in..." : "Login"}
               </Button>
             </div>
           </form>

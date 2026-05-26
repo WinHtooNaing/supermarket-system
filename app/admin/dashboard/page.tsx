@@ -1,5 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
+
+import { PosPageSkeleton } from "@/components/pos-page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -10,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { usePosData } from "@/lib/pos-store";
 import {
   Bar,
   BarChart,
@@ -23,58 +27,171 @@ import {
   YAxis,
 } from "recharts";
 
-const monthlySalesData = [
-  { month: "Jan", amount: 2100000 },
-  { month: "Feb", amount: 2350000 },
-  { month: "Mar", amount: 2480000 },
-  { month: "Apr", amount: 2620000 },
-  { month: "May", amount: 2780000 },
-  { month: "Jun", amount: 2940000 },
-  { month: "Jul", amount: 3010000 },
-  { month: "Aug", amount: 3180000 },
-  { month: "Sep", amount: 3270000 },
-  { month: "Oct", amount: 3390000 },
-  { month: "Nov", amount: 3520000 },
-  { month: "Dec", amount: 3680000 },
-];
+const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
 
-const sellerPerformance = [
-  { name: "Kyaw Zin", salesCount: 124, amount: 1860000, target: 90 },
-  { name: "Moe Thu", salesCount: 113, amount: 1695000, target: 82 },
-  { name: "Hnin Ei", salesCount: 98, amount: 1520000, target: 78 },
-  { name: "Aung Min", salesCount: 88, amount: 1315000, target: 71 },
-];
-
-const topProducts = [
-  { name: "Coke 325ml", units: 460, revenue: 690000 },
-  { name: "White Bread", units: 395, revenue: 869000 },
-  { name: "Mineral Water", units: 372, revenue: 297600 },
-  { name: "Potato Chips", units: 315, revenue: 378000 },
-  { name: "Instant Coffee", units: 205, revenue: 656000 },
-];
-
-const stockTracking = [
-  { name: "Eggs", stock: 5, reorderLevel: 20, status: "Critical" },
-  { name: "Cooking Oil", stock: 12, reorderLevel: 25, status: "Low" },
-  { name: "Rice 5kg", stock: 18, reorderLevel: 20, status: "Low" },
-  { name: "Sugar", stock: 42, reorderLevel: 30, status: "Healthy" },
-  { name: "Coke 325ml", stock: 24, reorderLevel: 20, status: "Healthy" },
-];
-
-const stockChartData = stockTracking.map((item) => ({
-  name: item.name,
-  stock: item.stock,
-  reorderLevel: item.reorderLevel,
-}));
+function getStartOfToday() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now;
+}
 
 export default function DashboardPage() {
+  const { products, sales, users, isLoading, error } = usePosData();
+
+  const metrics = useMemo(() => {
+    const todayStart = getStartOfToday();
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const previousMonthDate = new Date(currentYear, currentMonth - 1, 1);
+
+    const todaySales = sales.filter((sale) => new Date(sale.createdAt) >= todayStart);
+    const currentMonthSales = sales.filter((sale) => {
+      const date = new Date(sale.createdAt);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    });
+    const previousMonthSales = sales.filter((sale) => {
+      const date = new Date(sale.createdAt);
+      return (
+        date.getMonth() === previousMonthDate.getMonth() &&
+        date.getFullYear() === previousMonthDate.getFullYear()
+      );
+    });
+
+    const todayAmount = todaySales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const currentMonthAmount = currentMonthSales.reduce(
+      (sum, sale) => sum + sale.totalAmount,
+      0
+    );
+    const previousMonthAmount = previousMonthSales.reduce(
+      (sum, sale) => sum + sale.totalAmount,
+      0
+    );
+    const lowStockItems = products.filter(
+      (product) => product.stock <= product.reorderLevel
+    );
+
+    return {
+      todaySales,
+      currentMonthSales,
+      previousMonthAmount,
+      todayAmount,
+      currentMonthAmount,
+      lowStockItems,
+    };
+  }, [products, sales]);
+
+  const monthlySalesData = useMemo(() => {
+    const now = new Date();
+
+    return Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      const amount = sales
+        .filter((sale) => {
+          const saleDate = new Date(sale.createdAt);
+          return (
+            saleDate.getMonth() === date.getMonth() &&
+            saleDate.getFullYear() === date.getFullYear()
+          );
+        })
+        .reduce((sum, sale) => sum + sale.totalAmount, 0);
+
+      return {
+        month: monthFormatter.format(date),
+        amount,
+      };
+    });
+  }, [sales]);
+
+  const sellerPerformance = useMemo(() => {
+    const sellers = users.filter((user) => user.role === "seller");
+    const totalAmount = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+
+    return sellers
+      .map((seller) => {
+        const sellerSales = sales.filter((sale) => sale.sellerId === seller.id);
+        const amount = sellerSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+        const count = sellerSales.length;
+        const target = totalAmount ? Math.round((amount / totalAmount) * 100) : 0;
+
+        return {
+          name: seller.name,
+          salesCount: count,
+          amount,
+          target,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [sales, users]);
+
+  const topProducts = useMemo(() => {
+    const soldMap = new Map<number, { units: number; revenue: number }>();
+
+    for (const sale of sales) {
+      for (const item of sale.items) {
+        const current = soldMap.get(item.productId) ?? { units: 0, revenue: 0 };
+        soldMap.set(item.productId, {
+          units: current.units + item.quantity,
+          revenue: current.revenue + item.quantity * item.price,
+        });
+      }
+    }
+
+    return products
+      .map((product) => ({
+        name: product.name,
+        units: soldMap.get(product.id)?.units ?? 0,
+        revenue: soldMap.get(product.id)?.revenue ?? 0,
+      }))
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 5);
+  }, [products, sales]);
+
+  const stockTracking = useMemo(() => {
+    return products
+      .map((product) => ({
+        name: product.name,
+        stock: product.stock,
+        reorderLevel: product.reorderLevel,
+        status:
+          product.stock === 0
+            ? "Out"
+            : product.stock <= product.reorderLevel / 2
+              ? "Critical"
+              : product.stock <= product.reorderLevel
+                ? "Low"
+                : "Healthy",
+      }))
+      .sort((a, b) => a.stock - b.stock)
+      .slice(0, 6);
+  }, [products]);
+
+  const stockChartData = stockTracking.map((item) => ({
+    name: item.name,
+    stock: item.stock,
+    reorderLevel: item.reorderLevel,
+  }));
+
+  const topSeller = sellerPerformance[0];
+  const previousMonthDelta = metrics.previousMonthAmount
+    ? Math.round(
+        ((metrics.currentMonthAmount - metrics.previousMonthAmount) /
+          metrics.previousMonthAmount) *
+          100
+      )
+      : 100;
+
+  if (isLoading) {
+    return <PosPageSkeleton hasFilters={false} hasTable={false} />;
+  }
+
   return (
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          UI-only analytics overview for supermarket management.
+          Live overview generated from the same POS data used by admin and cashier screens.
         </p>
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -83,8 +200,12 @@ export default function DashboardPage() {
             <CardTitle>Today Sales</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">MMK 186,500</p>
-            <p className="text-sm text-muted-foreground">52 completed bills today</p>
+            <p className="text-2xl font-bold">
+              MMK {metrics.todayAmount.toLocaleString()}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {metrics.todaySales.length} completed bills today
+            </p>
           </CardContent>
         </Card>
 
@@ -93,8 +214,13 @@ export default function DashboardPage() {
             <CardTitle>Monthly Sales</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">MMK 3,680,000</p>
-            <p className="text-sm text-muted-foreground">+8.4% from last month</p>
+            <p className="text-2xl font-bold">
+              MMK {metrics.currentMonthAmount.toLocaleString()}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {previousMonthDelta >= 0 ? "+" : ""}
+              {previousMonthDelta}% from last month
+            </p>
           </CardContent>
         </Card>
 
@@ -103,8 +229,12 @@ export default function DashboardPage() {
             <CardTitle>Top Seller</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">Kyaw Zin</p>
-            <p className="text-sm text-muted-foreground">124 sales, MMK 1,860,000</p>
+            <p className="text-2xl font-bold">{topSeller?.name ?? "No sales yet"}</p>
+            <p className="text-sm text-muted-foreground">
+              {topSeller
+                ? `${topSeller.salesCount} sales, MMK ${topSeller.amount.toLocaleString()}`
+                : "Create sales to populate ranking"}
+            </p>
           </CardContent>
         </Card>
 
@@ -113,8 +243,10 @@ export default function DashboardPage() {
             <CardTitle>Stock Alerts</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-red-500">3 Items</p>
-            <p className="text-sm text-muted-foreground">Need restock immediately</p>
+            <p className="text-2xl font-bold text-red-500">
+              {metrics.lowStockItems.length} Items
+            </p>
+            <p className="text-sm text-muted-foreground">Need restock attention</p>
           </CardContent>
         </Card>
       </div>
@@ -129,7 +261,12 @@ export default function DashboardPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(value: number) => [`MMK ${value.toLocaleString()}`, "Sales"]} />
+              <Tooltip
+                formatter={(value) => [
+                  `MMK ${Number(value ?? 0).toLocaleString()}`,
+                  "Sales",
+                ]}
+              />
               <Line type="monotone" dataKey="amount" stroke="#2563eb" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -171,10 +308,17 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {topProducts.map((product, idx) => (
-              <div key={product.name} className="flex items-center justify-between rounded-md border p-3">
+              <div
+                key={product.name}
+                className="flex items-center justify-between rounded-md border p-3"
+              >
                 <div>
-                  <p className="font-medium">#{idx + 1} {product.name}</p>
-                  <p className="text-sm text-muted-foreground">Sold {product.units} units</p>
+                  <p className="font-medium">
+                    #{idx + 1} {product.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Sold {product.units} units
+                  </p>
                 </div>
                 <p className="font-semibold">MMK {product.revenue.toLocaleString()}</p>
               </div>
@@ -192,7 +336,14 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stockChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 11 }}
+                  interval={0}
+                  angle={-15}
+                  textAnchor="end"
+                  height={50}
+                />
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="reorderLevel" fill="#94a3b8" name="Reorder Level" />
@@ -215,7 +366,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {stockTracking.map((item) => (
-              <div key={item.name} className="flex items-center justify-between rounded-md border p-3">
+              <div
+                key={item.name}
+                className="flex items-center justify-between rounded-md border p-3"
+              >
                 <div>
                   <p className="font-medium">{item.name}</p>
                   <p className="text-sm text-muted-foreground">

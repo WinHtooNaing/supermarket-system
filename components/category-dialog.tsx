@@ -13,8 +13,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { categoryFormSchema } from "@/types/pos-form-schemas";
 
 export type CategoryRecord = {
@@ -27,10 +33,15 @@ type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 
 type CategoryDialogProps = {
   category?: CategoryRecord;
-  onSave: (data: CategoryFormValues & { id?: number }) => void;
+  onSave: (data: CategoryFormValues & { id?: number }) => void | Promise<void>;
+  isSubmitting?: boolean;
 };
 
-export function CategoryDialog({ category, onSave }: CategoryDialogProps) {
+export function CategoryDialog({
+  category,
+  onSave,
+  isSubmitting: externalSubmitting = false,
+}: CategoryDialogProps) {
   const [open, setOpen] = useState(false);
 
   const form = useForm<CategoryFormValues>({
@@ -39,6 +50,7 @@ export function CategoryDialog({ category, onSave }: CategoryDialogProps) {
       name: "",
     },
   });
+  const isSubmitting = form.formState.isSubmitting || externalSubmitting;
 
   useEffect(() => {
     if (!open) return;
@@ -46,8 +58,8 @@ export function CategoryDialog({ category, onSave }: CategoryDialogProps) {
     form.reset({ name: category?.name ?? "" });
   }, [category, form, open]);
 
-  function onSubmit(data: CategoryFormValues) {
-    onSave({ ...data, id: category?.id });
+  async function onSubmit(data: CategoryFormValues) {
+    await onSave({ ...data, id: category?.id });
     setOpen(false);
   }
 
@@ -76,12 +88,26 @@ export function CategoryDialog({ category, onSave }: CategoryDialogProps) {
                     id="category-name"
                     placeholder="Drink"
                     aria-invalid={fieldState.invalid}
+                    disabled={isSubmitting}
                   />
-                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
                 </Field>
               )}
             />
-            <Button type="submit">Save Category</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Saving...
+                </>
+              ) : category ? (
+                "Update Category"
+              ) : (
+                "Create Category"
+              )}
+            </Button>
           </FieldGroup>
         </form>
       </DialogContent>

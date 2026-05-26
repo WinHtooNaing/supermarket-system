@@ -16,11 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  deleteUser,
-  saveUser,
-  usePosData,
-} from "@/lib/pos-store";
+import { deleteUser, saveUser, usePosData } from "@/lib/pos-store";
 import { toast } from "sonner";
 
 function toSellerRecord(user: {
@@ -58,23 +54,32 @@ export default function SellerPage() {
   }, [search, users]);
 
   const salesBySeller = useMemo(() => {
-    return sales.reduce<Record<number, { count: number; amount: number }>>((acc, sale) => {
-      const current = acc[sale.sellerId] ?? { count: 0, amount: 0 };
-      acc[sale.sellerId] = {
-        count: current.count + 1,
-        amount: current.amount + sale.totalAmount,
-      };
-      return acc;
-    }, {});
+    return sales.reduce<Record<number, { count: number; amount: number }>>(
+      (acc, sale) => {
+        const current = acc[sale.sellerId] ?? { count: 0, amount: 0 };
+        acc[sale.sellerId] = {
+          count: current.count + 1,
+          amount: current.amount + sale.totalAmount,
+        };
+        return acc;
+      },
+      {},
+    );
   }, [sales]);
 
   async function handleSaveSeller(
-    data: Omit<SellerRecord, "id" | "createdAt"> & { id?: number }
+    data: Omit<SellerRecord, "id" | "createdAt"> & { id?: number },
   ) {
     try {
       setError("");
-      await saveUser(data);
-      toast.success(data.id ? "User updated successfully." : "User created successfully.");
+      // await saveUser(data);
+      await saveUser({
+        ...data,
+        id: data.id ?? 0,
+      });
+      toast.success(
+        data.id ? "User updated successfully." : "User created successfully.",
+      );
     } catch (saveError) {
       const message =
         saveError instanceof Error ? saveError.message : "Unable to save user.";
@@ -102,7 +107,9 @@ export default function SellerPage() {
       toast.success("User deleted successfully.");
     } catch (deleteError) {
       const message =
-        deleteError instanceof Error ? deleteError.message : "Unable to delete user.";
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete user.";
       setError(message);
       toast.error(message);
     } finally {
@@ -170,14 +177,19 @@ export default function SellerPage() {
 
         <TableBody>
           {filteredSellers.map((seller) => {
-            const performance = salesBySeller[seller.id] ?? { count: 0, amount: 0 };
+            const performance = salesBySeller[seller.id] ?? {
+              count: 0,
+              amount: 0,
+            };
 
             return (
               <TableRow key={seller.id}>
                 <TableCell>{seller.userId}</TableCell>
                 <TableCell className="font-medium">{seller.name}</TableCell>
                 <TableCell>
-                  <Badge variant={seller.role === "admin" ? "secondary" : "outline"}>
+                  <Badge
+                    variant={seller.role === "admin" ? "secondary" : "outline"}
+                  >
                     {seller.role.toUpperCase()}
                   </Badge>
                 </TableCell>
@@ -211,7 +223,10 @@ export default function SellerPage() {
 
           {!filteredSellers.length && (
             <TableRow>
-              <TableCell className="text-center text-muted-foreground" colSpan={7}>
+              <TableCell
+                className="text-center text-muted-foreground"
+                colSpan={7}
+              >
                 No sellers found.
               </TableCell>
             </TableRow>
